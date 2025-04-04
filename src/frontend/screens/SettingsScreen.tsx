@@ -3,578 +3,533 @@ import {
     View,
     Text,
     StyleSheet,
-    TouchableOpacity,
-    Alert,
-    ScrollView,
-    Platform,
-    ActivityIndicator,
     Switch,
+    TouchableOpacity,
+    ScrollView,
+    Alert,
+    Platform,
 } from 'react-native';
 import DateTimePicker from '@react-native-community/datetimepicker';
 import { MMKV } from 'react-native-mmkv';
-import Share from 'react-native-share';
-import { FileSystem as FileAccess, Dirs } from 'react-native-file-access';
+import notifee, { TimestampTrigger, TriggerType, AndroidImportance, RepeatFrequency } from '@notifee/react-native';
+import { exportAllData, importData } from '../services/DataExportService';
+import { colors, spacing } from '../theme/theme';
+import { deleteAllHabitTableData } from '../../backend/databases/HabitDatabase';
 import Icon from 'react-native-vector-icons/MaterialCommunityIcons';
-import { getAllHabitsTableData, deleteAllHabitTableData, resetHabitTable } from '../../backend/databases/HabitDatabase';
-import { deleteAllHabitTrackingTables } from '../../backend/databases/HabitProgressDatabase';
+import { Portal, Dialog, Button as PaperButton, TextInput as PaperTextInput } from 'react-native-paper';
 
-// Import notification services
-import {
-    DEFAULT_NOTIFICATION_SETTINGS,
-    NotificationSettings,
-    initializeNotifications,
-    scheduleAllHabitReminders,
-    cancelAllHabitReminders,
-    checkNotificationPermission,
-} from '../services/NotificationService';
-
-// Storage for settings
+// Initialize MMKV storage
 const storage = new MMKV();
-const SETTINGS_KEY = 'app_settings';
+
+// Key for storing notification settings
 const NOTIFICATION_SETTINGS_KEY = 'notification_settings';
+const DAILY_REMINDER_NOTIFICATION_ID = 'daily-reminder';
 
-// Default settings
-const DEFAULT_SETTINGS = {
-    sleepTime: '22:00',
-    wakeupTime: '06:00',
-};
-
-interface Settings {
-    sleepTime: string;
-    wakeupTime: string;
+// Define types for notification settings
+interface NotificationSettings {
+    enabled: boolean;
+    time: number;
 }
 
-const SettingsScreen: React.FC = () => {
-    const [settings, setSettings] = useState<Settings>(DEFAULT_SETTINGS);
-    const [notificationSettings, setNotificationSettings] = useState<NotificationSettings>(DEFAULT_NOTIFICATION_SETTINGS);
-    const [showSleepPicker, setShowSleepPicker] = useState(false);
-    const [showWakeupPicker, setShowWakeupPicker] = useState(false);
-    const [showReminderPicker, setShowReminderPicker] = useState(false);
-    const [isLoading, setIsLoading] = useState(false);
-    const [permissionGranted, setPermissionGranted] = useState(false);
+// Default notification settings
+const DEFAULT_NOTIFICATION_SETTINGS: NotificationSettings = {
+    enabled: true,
+    time: new Date().setHours(8, 0, 0, 0),
+};
 
-    // Load settings on component mount
+const SettingsScreen = () => {
+    // State for notification settings - Initialize directly with 8 AM default
+    const [notificationsEnabled, setNotificationsEnabled] = useState(DEFAULT_NOTIFICATION_SETTINGS.enabled);
+    const [notificationTime, setNotificationTime] = useState(new Date(DEFAULT_NOTIFICATION_SETTINGS.time));
+    const [showTimePicker, setShowTimePicker] = useState(false);
+    const [isLoadingSettings, setIsLoadingSettings] = useState(true);
+
+    // State for data export/import
+    const [isExporting, setIsExporting] = useState(false);
+    const [isImporting, setIsImporting] = useState(false);
+    const [importDialogVisible, setImportDialogVisible] = useState(false);
+    const [importJsonText, setImportJsonText] = useState('');
+
+    // --- Define saveNotificationSettings function BEFORE useEffect ---
+    const saveNotificationSettings = (settings: NotificationSettings) => {
+        storage.set(NOTIFICATION_SETTINGS_KEY, JSON.stringify(settings));
+    };
+
     useEffect(() => {
-        loadSettings();
-        loadNotificationSettings();
+        storage.delete(NOTIFICATION_SETTINGS_KEY);
+
+        const defaultTime = new Date(DEFAULT_NOTIFICATION_SETTINGS.time);
+        const defaultEnabled = DEFAULT_NOTIFICATION_SETTINGS.enabled;
+        setNotificationsEnabled(defaultEnabled);
+        setNotificationTime(defaultTime);
+
+        saveNotificationSettings({
+            enabled: defaultEnabled,
+            time: defaultTime.getTime(),
+        });
+
+        // Indicate loading is complete
+        setIsLoadingSettings(false);
+
     }, []);
 
-    const loadSettings = () => {
-        try {
-            const settingsJson = storage.getString(SETTINGS_KEY);
-            if (settingsJson) {
-                setSettings(JSON.parse(settingsJson));
-            } else {
-                // Initialize with default settings if none exist
-                storage.set(SETTINGS_KEY, JSON.stringify(DEFAULT_SETTINGS));
+    // Handle toggle of notifications
+    const handleToggleNotifications = (value: boolean) => {
+        setNotificationsEnabled(value);
+        saveNotificationSettings({
+            enabled: value,
+            time: notificationTime.getTime(),
+        });
+
+        // Schedule or cancel notifications based on the new state
+        if (value) {
+            scheduleDailyNotification(notificationTime);
+        } else {
+            cancelScheduledNotifications();
+        }
+    };
+
+    // Handle time change
+    const handleTimeChange = (event: any, selectedTime?: Date) => {
+        const currentDate = selectedTime || notificationTime;
+        setShowTimePicker(Platform.OS === 'ios');
+
+        if (selectedTime) {
+            setNotificationTime(currentDate);
+            saveNotificationSettings({
+                enabled: notificationsEnabled,
+                time: currentDate.getTime(),
+            });
+
+            if (notificationsEnabled) {
+                scheduleDailyNotification(currentDate);
             }
-        } catch (error) {
-            console.error('Error loading settings:', error);
-            Alert.alert('Error', 'Failed to load settings');
         }
     };
 
-    const loadNotificationSettings = () => {
+    // Function to schedule the daily notification
+    const scheduleDailyNotification = async (time: Date) => {
         try {
-            const notificationSettingsJson = storage.getString(NOTIFICATION_SETTINGS_KEY);
-            if (notificationSettingsJson) {
-                setNotificationSettings(JSON.parse(notificationSettingsJson));
-            } else {
-                // Initialize with default notification settings if none exist
-                storage.set(NOTIFICATION_SETTINGS_KEY, JSON.stringify(DEFAULT_NOTIFICATION_SETTINGS));
-            }
-        } catch (error) {
-            console.error('Error loading notification settings:', error);
-            Alert.alert('Error', 'Failed to load notification settings');
-        }
-    };
+            await notifee.requestPermission();
 
-    const saveSettings = (newSettings: Settings) => {
-        try {
-            storage.set(SETTINGS_KEY, JSON.stringify(newSettings));
-            setSettings(newSettings);
-        } catch (error) {
-            console.error('Error saving settings:', error);
-            Alert.alert('Error', 'Failed to save settings');
-        }
-    };
+            const channelId = await notifee.createChannel({
+                id: 'reminders',
+                name: 'Daily Reminders',
+                importance: AndroidImportance.DEFAULT,
+            });
 
-    const saveNotificationSettings = (newNotificationSettings: NotificationSettings) => {
-        try {
-            storage.set(NOTIFICATION_SETTINGS_KEY, JSON.stringify(newNotificationSettings));
-            setNotificationSettings(newNotificationSettings);
-        } catch (error) {
-            console.error('Error saving notification settings:', error);
-            Alert.alert('Error', 'Failed to save notification settings');
-        }
-    };
+            // Create a timestamp trigger for the selected time today
+            const trigger: TimestampTrigger = {
+                type: TriggerType.TIMESTAMP,
+                timestamp: time.getTime(),
+                repeatFrequency: RepeatFrequency.DAILY,
+            };
 
-    const handleSleepTimeChange = (event: any, selectedDate?: Date) => {
-        setShowSleepPicker(Platform.OS === 'ios');
-        if (selectedDate) {
-            const hours = selectedDate.getHours().toString().padStart(2, '0');
-            const minutes = selectedDate.getMinutes().toString().padStart(2, '0');
-            const newTime = `${hours}:${minutes}`;
-            saveSettings({ ...settings, sleepTime: newTime });
-        }
-    };
-
-    const handleWakeupTimeChange = (event: any, selectedDate?: Date) => {
-        setShowWakeupPicker(Platform.OS === 'ios');
-        if (selectedDate) {
-            const hours = selectedDate.getHours().toString().padStart(2, '0');
-            const minutes = selectedDate.getMinutes().toString().padStart(2, '0');
-            const newTime = `${hours}:${minutes}`;
-            saveSettings({ ...settings, wakeupTime: newTime });
-        }
-    };
-
-    const handleReminderTimeChange = (event: any, selectedDate?: Date) => {
-        setShowReminderPicker(Platform.OS === 'ios');
-        if (selectedDate) {
-            const hours = selectedDate.getHours().toString().padStart(2, '0');
-            const minutes = selectedDate.getMinutes().toString().padStart(2, '0');
-            const newTime = `${hours}:${minutes}`;
-            const newSettings = { ...notificationSettings, reminderTime: newTime };
-            saveNotificationSettings(newSettings);
-            updateNotifications(newSettings);
-        }
-    };
-
-    const toggleNotifications = (value: boolean) => {
-        const newSettings = { ...notificationSettings, enabled: value };
-        saveNotificationSettings(newSettings);
-        updateNotifications(newSettings);
-    };
-
-    const updateNotifications = async (newSettings: NotificationSettings) => {
-        try {
-            if (newSettings.enabled) {
-                // Request permission if not already granted
-                const hasPermission = await checkNotificationPermission();
-                if (!hasPermission) {
-                    const granted = await initializeNotifications();
-                    setPermissionGranted(granted);
-                    if (!granted) {
-                        Alert.alert(
-                            'Permission Required',
-                            'Notifications require permission. Please enable notifications in your device settings.',
-                            [{ text: 'OK' }]
-                        );
-                        // Disable notifications if permission was denied
-                        saveNotificationSettings({ ...newSettings, enabled: false });
-                        return;
-                    }
-                }
-
-                // Schedule notifications for all habits
-                const habits = getAllHabitsTableData();
-                await scheduleAllHabitReminders(habits, newSettings.reminderTime);
-            } else {
-                // Cancel all notifications if disabled
-                await cancelAllHabitReminders();
-            }
-        } catch (error) {
-            console.error('Error updating notifications:', error);
-            Alert.alert('Error', 'Failed to update notification settings');
-        }
-    };
-
-    const clearDatabase = () => {
-        Alert.alert(
-            'Clear Database',
-            'Are you sure you want to clear all habit data? This action cannot be undone.',
-            [
-                { text: 'Cancel', style: 'cancel' },
+            // Create the notification
+            await notifee.createTriggerNotification(
                 {
-                    text: 'Clear',
+                    id: DAILY_REMINDER_NOTIFICATION_ID,
+                    title: 'Habit Reminder',
+                    body: 'Don\'t forget to update your habits today!',
+                    android: {
+                        channelId,
+                        pressAction: {
+                            id: 'default', // Opens the app
+                        },
+                    },
+                    ios: {
+                        sound: 'default',
+                    },
+                },
+                trigger,
+            );
+
+            console.log(`Daily notification scheduled for ${formatTime(time)} with ID ${DAILY_REMINDER_NOTIFICATION_ID}`);
+        } catch (error) {
+            console.error('Error scheduling daily notification:', error);
+            Alert.alert('Error', 'Could not schedule daily reminder.');
+        }
+    };
+
+    // Function to cancel scheduled notifications
+    const cancelScheduledNotifications = async () => {
+        try {
+            await notifee.cancelNotification(DAILY_REMINDER_NOTIFICATION_ID);
+            console.log(`Cancelled scheduled notification with ID ${DAILY_REMINDER_NOTIFICATION_ID}`);
+        } catch (error) {
+            console.error('Error cancelling notifications:', error);
+        }
+    };
+
+    // Format time for display
+    const formatTime = (date: Date) => {
+        let hours = date.getHours();
+        const minutes = date.getMinutes();
+        const ampm = hours >= 12 ? 'PM' : 'AM';
+
+        hours = hours % 12;
+        hours = hours ? hours : 12; // the hour '0' should be '12'
+
+        const minutesStr = minutes < 10 ? '0' + minutes : minutes;
+
+        return `${hours}:${minutesStr} ${ampm}`;
+    };
+
+    // Send a test notification
+    const sendTestNotification = async () => {
+        try {
+            // Create a channel (required for Android)
+            const channelId = await notifee.createChannel({
+                id: 'default',
+                name: 'Default Channel',
+                importance: AndroidImportance.HIGH,
+            });
+
+            // Create a time-based trigger (5 seconds from now)
+            const trigger: TimestampTrigger = {
+                type: TriggerType.TIMESTAMP,
+                timestamp: Date.now() + 5000,
+            };
+
+            await notifee.createTriggerNotification(
+                {
+                    // Use a different ID for test notifications
+                    id: 'test-notification',
+                    title: 'Test Notification',
+                    body: 'This is a test notification from Habit Tracker!',
+                    android: {
+                        channelId,
+                        importance: AndroidImportance.HIGH, // Use HIGH for testing visibility
+                        pressAction: {
+                            id: 'default',
+                        },
+                    },
+                    ios: {
+                        sound: 'default',
+                    },
+                },
+                trigger,
+            );
+
+            Alert.alert('Test Notification Sent', 'You should receive a notification in 5 seconds.');
+        } catch (error) {
+            console.error('Error sending test notification:', error);
+            Alert.alert('Error', 'Failed to send test notification.');
+        }
+    };
+
+    // Handle data export (copy to clipboard)
+    const handleExportData = async () => {
+        setIsExporting(true);
+        try {
+            await exportAllData(); // Service function now handles clipboard and alert
+        } catch (error) {
+            // Error alert is handled within exportAllData, but log here too
+            console.error('Export error in SettingsScreen:', error);
+        } finally {
+            setIsExporting(false);
+        }
+    };
+
+    // Show the import dialog
+    const showImportDialog = () => {
+        setImportJsonText(''); // Clear previous text
+        setImportDialogVisible(true);
+    };
+
+    // Hide the import dialog
+    const hideImportDialog = () => {
+        setImportDialogVisible(false);
+        setImportJsonText(''); // Clear text on close
+    };
+
+    // Handle the actual import process after user confirms in dialog
+    const handleConfirmImport = async () => {
+        hideImportDialog(); // Close dialog first
+
+        if (!importJsonText.trim()) {
+            Alert.alert('Import Failed', 'No data pasted to import.');
+            return;
+        }
+
+        // Confirmation before overwriting data
+        Alert.alert(
+            'Confirm Import',
+            'This will replace all your current habits and tracking data. This action cannot be undone. Are you sure you want to continue?',
+            [
+                {
+                    text: 'Cancel',
+                    style: 'cancel',
+                },
+                {
+                    text: 'Import',
                     style: 'destructive',
                     onPress: async () => {
+                        setIsImporting(true);
                         try {
-                            setIsLoading(true);
-                            await deleteAllHabitTableData();
-                            await deleteAllHabitTrackingTables();
-                            await resetHabitTable();
-                            setIsLoading(false);
-                            Alert.alert('Success', 'Database cleared successfully');
+                            await importData(importJsonText); // Pass pasted text to service
+                            // Success alert is handled within importData
+                            // TODO: Add logic to refresh the app state after import if necessary (e.g., navigate away and back, or use a state management solution)
                         } catch (error) {
-                            setIsLoading(false);
-                            console.error('Error clearing database:', error);
-                            Alert.alert('Error', 'Failed to clear database');
+                            // Error alert is handled within importData, but log here too
+                            console.error('Import error in SettingsScreen:', error);
+                        } finally {
+                            setIsImporting(false);
                         }
                     },
                 },
-            ],
-            { cancelable: true }
+            ]
         );
     };
 
-    const exportData = async () => {
-        try {
-            setIsLoading(true);
-
-            // Get all habits data
-            const habits = getAllHabitsTableData();
-
-            // Get all tracking data for each habit
-            const trackingData: { [key: string]: any } = {};
-            for (const habit of habits) {
-                const trackingKey = `habit_tracking_${habit.id}`;
-                const habitTrackingJson = storage.getString(trackingKey);
-                if (habitTrackingJson) {
-                    trackingData[trackingKey] = JSON.parse(habitTrackingJson);
-                }
-            }
-
-            // Create export object with all data
-            const exportObject = {
-                habits,
-                trackingData,
-                settings,
-                notificationSettings,
-                exportDate: new Date().toISOString(),
-            };
-
-            // Convert to JSON string
-            const jsonData = JSON.stringify(exportObject, null, 2);
-
-            // Create file with timestamp
-            const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
-            const fileName = `habit_tracker_export_${timestamp}.json`;
-            const filePath = `${Dirs.DocumentDir}/${fileName}`;
-
-            // Write data to file
-            await FileAccess.writeFile(filePath, jsonData, 'utf8');
-
-            // Share the file
-            await Share.open({
-                title: 'Export Habit Tracker Data',
-                message: 'Here is your exported habit tracker data',
-                url: `file://${filePath}`,
-                type: 'application/json',
-            });
-
-            setIsLoading(false);
-        } catch (error) {
-            setIsLoading(false);
-            console.error('Error exporting data:', error);
-            Alert.alert('Error', 'Failed to export data');
-        }
-    };
-
-    const importData = async () => {
-        try {
-            Alert.alert(
-                'Import Data',
-                'To import data, please place your JSON file in the Documents folder of your device and name it "habit_tracker_import.json"',
-                [
-                    { text: 'Cancel', style: 'cancel' },
-                    {
-                        text: 'Check for File',
-                        onPress: async () => {
-                            try {
-                                setIsLoading(true);
-                                const importPath = `${Dirs.DocumentDir}/habit_tracker_import.json`;
-
-                                // Check if file exists
-                                const exists = await FileAccess.exists(importPath);
-                                if (!exists) {
-                                    setIsLoading(false);
-                                    Alert.alert('Error', 'Import file not found. Please make sure you have placed habit_tracker_import.json in your Documents folder.');
-                                    return;
-                                }
-
-                                // Read file content
-                                const fileContent = await FileAccess.readFile(importPath, 'utf8');
-                                const importedData = JSON.parse(fileContent);
-
-                                // Validate imported data structure
-                                if (!importedData.habits || !importedData.trackingData) {
-                                    throw new Error('Invalid import file format');
-                                }
-
-                                // Confirm import
-                                Alert.alert(
-                                    'Confirm Import',
-                                    'Importing data will replace all current habits and settings. Continue?',
-                                    [
-                                        { text: 'Cancel', style: 'cancel' },
-                                        {
-                                            text: 'Import',
-                                            onPress: async () => {
-                                                try {
-                                                    // Clear existing data
-                                                    await deleteAllHabitTableData();
-                                                    await deleteAllHabitTrackingTables();
-                                                    await resetHabitTable();
-
-                                                    // Import habits
-                                                    storage.set('habits', JSON.stringify(importedData.habits));
-
-                                                    // Import tracking data
-                                                    for (const [key, value] of Object.entries(importedData.trackingData)) {
-                                                        storage.set(key, JSON.stringify(value));
-                                                    }
-
-                                                    // Import settings if available
-                                                    if (importedData.settings) {
-                                                        saveSettings(importedData.settings);
-                                                    }
-
-                                                    // Import notification settings if available
-                                                    if (importedData.notificationSettings) {
-                                                        saveNotificationSettings(importedData.notificationSettings);
-                                                    }
-
-                                                    setIsLoading(false);
-                                                    Alert.alert('Success', 'Data imported successfully');
-                                                } catch (error) {
-                                                    setIsLoading(false);
-                                                    console.error('Error importing data:', error);
-                                                    Alert.alert('Error', 'Failed to import data');
-                                                }
-                                            },
-                                        },
-                                    ],
-                                    { cancelable: true }
-                                );
-                            } catch (error) {
-                                setIsLoading(false);
-                                console.error('Error reading import file:', error);
-                                Alert.alert('Error', 'Failed to read import file. Make sure it is a valid JSON file.');
-                            }
-                        },
-                    },
-                ],
-                { cancelable: true }
-            );
-        } catch (error) {
-            console.error('Error with import process:', error);
-            Alert.alert('Error', 'An unexpected error occurred');
-        }
-    };
-
-    // Initialize notifications on component mount
-    useEffect(() => {
-        const initNotifications = async () => {
-            const hasPermission = await checkNotificationPermission();
-            setPermissionGranted(hasPermission);
-            if (notificationSettings.enabled && hasPermission) {
-                const habits = getAllHabitsTableData();
-                await scheduleAllHabitReminders(habits, notificationSettings.reminderTime);
-            }
-        };
-
-        initNotifications();
-    }, [notificationSettings.enabled, notificationSettings.reminderTime]);
-
-    // Format time for display
-    const formatTimeForDisplay = (timeString: string) => {
-        const [hours, minutes] = timeString.split(':');
-        const hour = parseInt(hours, 10);
-        const period = hour >= 12 ? 'PM' : 'AM';
-        const displayHour = hour % 12 || 12;
-        return `${displayHour}:${minutes} ${period}`;
-    };
-
-    // Convert string time to Date object for picker
-    const timeStringToDate = (timeString: string) => {
-        const date = new Date();
-        const [hours, minutes] = timeString.split(':');
-        date.setHours(parseInt(hours, 10));
-        date.setMinutes(parseInt(minutes, 10));
-        return date;
-    };
 
     return (
-        <ScrollView style={styles.container}>
-            {isLoading && (
-                <View style={styles.loadingOverlay}>
-                    <ActivityIndicator size="large" color="#4A6FFF" />
-                    <Text style={styles.loadingText}>Processing...</Text>
-                </View>
-            )}
+        <>
+            <ScrollView style={styles.container}>
+                {/* Notifications Section ... */}
+                <View style={styles.section}>
+                    <Text style={styles.sectionTitle}>Notifications</Text>
+                    <View style={styles.settingRow}>
+                        <Text style={styles.settingLabel}>Enable Notifications</Text>
+                        <Switch
+                            value={notificationsEnabled}
+                            onValueChange={handleToggleNotifications}
+                            trackColor={{ false: '#767577', true: '#81b0ff' }}
+                            thumbColor={notificationsEnabled ? '#2196F3' : '#f4f3f4'}
+                        />
+                    </View>
 
-            <View style={styles.section}>
-                <Text style={styles.sectionTitle}>Sleep Schedule</Text>
-                <View style={styles.settingItem}>
-                    <Text style={styles.settingLabel}>Sleep Time</Text>
+                    {/* Conditionally render time settings based on loading state */}
+                    {!isLoadingSettings && (
+                        <>
+                            <View style={styles.settingRow}>
+                                <Text style={styles.settingLabel}>Default Reminder Time</Text>
+                                <TouchableOpacity
+                                    onPress={() => setShowTimePicker(true)}
+                                    style={styles.timeButton}
+                                    disabled={!notificationsEnabled}
+                                >
+                                    <Text style={[
+                                        styles.timeButtonText,
+                                        !notificationsEnabled && styles.disabledText,
+                                    ]}>
+                                        {formatTime(notificationTime)}
+                                    </Text>
+                                </TouchableOpacity>
+                            </View>
+
+                            {showTimePicker && (
+                                <DateTimePicker
+                                    value={notificationTime}
+                                    mode="time"
+                                    is24Hour={false}
+                                    display="default"
+                                    onChange={handleTimeChange}
+                                />
+                            )}
+                        </>
+                    )}
+
                     <TouchableOpacity
-                        style={styles.timeSelector}
-                        onPress={() => setShowSleepPicker(true)}
+                        style={[styles.button, !notificationsEnabled && styles.disabled]}
+                        onPress={sendTestNotification}
+                        disabled={!notificationsEnabled}
                     >
-                        <Text style={styles.timeText}>{formatTimeForDisplay(settings.sleepTime)}</Text>
-                        <Icon name="clock-outline" size={20} color="#4A6FFF" />
+                        <Text style={styles.buttonText}>Send Test Notification</Text>
                     </TouchableOpacity>
                 </View>
 
-                <View style={styles.settingItem}>
-                    <Text style={styles.settingLabel}>Wake-up Time</Text>
+                {/* Data Management Section */}
+                <View style={styles.section}>
+                    <Text style={styles.sectionTitle}>Data Management</Text>
+                    <Text style={styles.infoText}>
+                        Export your habits and tracking data to the clipboard, or import data by pasting it from the clipboard.
+                    </Text>
+
                     <TouchableOpacity
-                        style={styles.timeSelector}
-                        onPress={() => setShowWakeupPicker(true)}
+                        style={[styles.button, styles.exportButton, isExporting && styles.disabled]}
+                        onPress={handleExportData}
+                        disabled={isExporting}
                     >
-                        <Text style={styles.timeText}>{formatTimeForDisplay(settings.wakeupTime)}</Text>
-                        <Icon name="clock-outline" size={20} color="#4A6FFF" />
+                        <Icon name="content-copy" size={20} color="white" style={styles.mr} />
+                        <Text style={styles.buttonText}>
+                            {isExporting ? 'Copying...' : 'Copy Data to Clipboard'}
+                        </Text>
+                    </TouchableOpacity>
+
+                    <TouchableOpacity
+                        style={[styles.button, styles.importButton, isImporting && styles.disabled]}
+                        onPress={showImportDialog} // Show dialog instead of direct import
+                        disabled={isImporting}
+                    >
+                        <Icon name="content-paste" size={20} color="white" style={styles.mr} />
+                        <Text style={styles.buttonText}>
+                            {isImporting ? 'Importing...' : 'Import Data from Clipboard'}
+                        </Text>
+                    </TouchableOpacity>
+
+                    {/* Delete All Data Button */}
+                    <TouchableOpacity
+                        style={[styles.button, styles.deleteAllButton]} // Use common button style + specific delete style
+                        onPress={() => {
+                            Alert.alert(
+                                'Delete All Data',
+                                'Are you sure you want to delete all habits and tracking data? This action cannot be undone.',
+                                [
+                                    { text: 'Cancel', style: 'cancel' },
+                                    {
+                                        text: 'Delete',
+                                        style: 'destructive',
+                                        onPress: async () => {
+                                            try {
+                                                // Consider moving deleteAllHabitTableData to HabitService for consistency
+                                                await deleteAllHabitTableData();
+                                                Alert.alert('Success', 'All habit data has been deleted.');
+                                                // Optionally navigate away or refresh state if needed
+                                            } catch (error) {
+                                                console.error('Error deleting all data:', error);
+                                                Alert.alert('Error', 'Failed to delete all habit data.');
+                                            }
+                                        },
+                                    },
+                                ],
+                            );
+                        }}
+                    >
+                        <Icon name="delete-sweep" size={20} color="white" style={styles.mr} />
+                        <Text style={styles.buttonText}>Delete All Data</Text> {/* Use common buttonText style */}
                     </TouchableOpacity>
                 </View>
-            </View>
+            </ScrollView>
 
-            <View style={styles.section}>
-                <Text style={styles.sectionTitle}>Notifications</Text>
-                <View style={styles.settingItem}>
-                    <Text style={styles.settingLabel}>Reminder Time</Text>
-                    <TouchableOpacity
-                        style={styles.timeSelector}
-                        onPress={() => setShowReminderPicker(true)}
-                    >
-                        <Text style={styles.timeText}>{formatTimeForDisplay(notificationSettings.reminderTime)}</Text>
-                        <Icon name="clock-outline" size={20} color="#4A6FFF" />
-                    </TouchableOpacity>
-                </View>
-
-                <View style={styles.settingItem}>
-                    <Text style={styles.settingLabel}>Enable Notifications</Text>
-                    <Switch
-                        value={notificationSettings.enabled}
-                        onValueChange={toggleNotifications}
-                    />
-                </View>
-            </View>
-
-            <View style={styles.section}>
-                <Text style={styles.sectionTitle}>Data Management</Text>
-
-                <TouchableOpacity style={styles.button} onPress={exportData}>
-                    <Icon name="export" size={20} color="#FFFFFF" />
-                    <Text style={styles.buttonText}>Export Data</Text>
-                </TouchableOpacity>
-
-                <TouchableOpacity style={styles.button} onPress={importData}>
-                    <Icon name="import" size={20} color="#FFFFFF" />
-                    <Text style={styles.buttonText}>Import Data</Text>
-                </TouchableOpacity>
-
-                <TouchableOpacity style={[styles.button, styles.dangerButton]} onPress={clearDatabase}>
-                    <Icon name="delete" size={20} color="#FFFFFF" />
-                    <Text style={styles.buttonText}>Clear Database</Text>
-                </TouchableOpacity>
-            </View>
-
-            {/* Time Pickers */}
-            {showSleepPicker && (
-                <DateTimePicker
-                    value={timeStringToDate(settings.sleepTime)}
-                    mode="time"
-                    is24Hour={false}
-                    display="default"
-                    onChange={handleSleepTimeChange}
-                />
-            )}
-
-            {showWakeupPicker && (
-                <DateTimePicker
-                    value={timeStringToDate(settings.wakeupTime)}
-                    mode="time"
-                    is24Hour={false}
-                    display="default"
-                    onChange={handleWakeupTimeChange}
-                />
-            )}
-
-            {showReminderPicker && (
-                <DateTimePicker
-                    value={timeStringToDate(notificationSettings.reminderTime)}
-                    mode="time"
-                    is24Hour={false}
-                    display="default"
-                    onChange={handleReminderTimeChange}
-                />
-            )}
-        </ScrollView>
+            {/* Import Dialog */}
+            <Portal>
+                <Dialog visible={importDialogVisible} onDismiss={hideImportDialog}>
+                    <Dialog.Title>Import Data</Dialog.Title>
+                    <Dialog.Content>
+                        <Text style={styles.dialogInfoText}>
+                            Paste the previously exported JSON data into the text box below.
+                        </Text>
+                        <PaperTextInput
+                            label="Pasted JSON Data"
+                            value={importJsonText}
+                            onChangeText={setImportJsonText}
+                            multiline
+                            numberOfLines={8} // Adjust height as needed
+                            style={styles.textInput}
+                            mode="outlined"
+                            disabled={isImporting}
+                        />
+                    </Dialog.Content>
+                    <Dialog.Actions>
+                        <PaperButton onPress={hideImportDialog} disabled={isImporting}>Cancel</PaperButton>
+                        <PaperButton onPress={handleConfirmImport} disabled={isImporting || !importJsonText.trim()} loading={isImporting}>
+                            Import
+                        </PaperButton>
+                    </Dialog.Actions>
+                </Dialog>
+            </Portal>
+        </>
     );
 };
 
 const styles = StyleSheet.create({
     container: {
         flex: 1,
-        backgroundColor: '#F5F5F5',
+        backgroundColor: '#f5f5f5',
     },
     section: {
-        backgroundColor: '#FFFFFF',
+        backgroundColor: 'white',
+        margin: 10,
+        padding: 15,
         borderRadius: 10,
-        padding: 16,
-        margin: 16,
         shadowColor: '#000',
-        shadowOffset: { width: 0, height: 2 },
-        shadowOpacity: 0.1,
-        shadowRadius: 4,
-        elevation: 3,
+        shadowOffset: { width: 0, height: 1 },
+        shadowOpacity: 0.2,
+        shadowRadius: 1.5,
+        elevation: 2,
     },
     sectionTitle: {
         fontSize: 18,
         fontWeight: 'bold',
-        marginBottom: 16,
-        color: '#333333',
+        marginBottom: 15,
+        color: '#333',
     },
-    settingItem: {
+    settingRow: {
         flexDirection: 'row',
         justifyContent: 'space-between',
         alignItems: 'center',
-        paddingVertical: 12,
+        paddingVertical: 10,
         borderBottomWidth: 1,
-        borderBottomColor: '#EEEEEE',
+        borderBottomColor: '#f0f0f0',
     },
     settingLabel: {
         fontSize: 16,
-        color: '#333333',
+        color: '#333',
     },
-    timeSelector: {
-        flexDirection: 'row',
-        alignItems: 'center',
-        backgroundColor: '#F8F8F8',
-        paddingHorizontal: 12,
-        paddingVertical: 8,
-        borderRadius: 6,
+    timeButton: {
+        backgroundColor: '#f0f0f0',
+        padding: 8,
+        borderRadius: 5,
     },
-    timeText: {
+    timeButtonText: {
         fontSize: 16,
-        marginRight: 8,
-        color: '#333333',
+        color: '#2196F3',
+    },
+    disabledText: {
+        color: '#aaa',
     },
     button: {
+        backgroundColor: '#2196F3',
+        padding: 12,
+        borderRadius: 5,
+        alignItems: 'center',
+        marginTop: 15,
+    },
+    buttonText: {
+        color: 'white',
+        fontSize: 16,
+        fontWeight: '500',
+        marginLeft: 4,
+    },
+    disabled: {
+        opacity: 0.6,
+    },
+    infoText: {
+        fontSize: 14,
+        color: '#666',
+        marginBottom: 15,
+        lineHeight: 20,
+    },
+    exportButton: {
+        backgroundColor: '#2196F3',
         flexDirection: 'row',
         alignItems: 'center',
         justifyContent: 'center',
-        backgroundColor: '#4A6FFF',
-        borderRadius: 8,
-        paddingVertical: 12,
-        marginVertical: 8,
     },
-    buttonText: {
-        color: '#FFFFFF',
-        fontSize: 16,
-        fontWeight: '600',
-        marginLeft: 8,
-    },
-    dangerButton: {
-        backgroundColor: '#E53935',
-    },
-    loadingOverlay: {
-        position: 'absolute',
-        top: 0,
-        left: 0,
-        right: 0,
-        bottom: 0,
-        backgroundColor: 'rgba(0,0,0,0.5)',
-        justifyContent: 'center',
+    importButton: {
+        backgroundColor: '#FF9800',
+        flexDirection: 'row',
         alignItems: 'center',
-        zIndex: 1000,
+        justifyContent: 'center',
     },
-    loadingText: {
-        color: '#FFFFFF',
-        marginTop: 12,
-        fontSize: 16,
+    deleteAllButton: {
+        backgroundColor: colors.error,
+        flexDirection: 'row',
+        alignItems: 'center',
+        justifyContent: 'center',
+    },
+    dialogInfoText: {
+        marginBottom: spacing.md,
+        fontSize: 15,
+        color: colors.textSecondary,
+    },
+    textInput: {
+        maxHeight: 200,
+        marginBottom: spacing.md,
+    },
+    mr: {
+        marginRight: spacing.sm,
     },
 });
 

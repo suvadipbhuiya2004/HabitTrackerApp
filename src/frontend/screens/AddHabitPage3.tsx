@@ -9,14 +9,12 @@ import {
     ScrollView,
     KeyboardAvoidingView,
     Platform,
-    Switch,
 } from 'react-native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { RouteProp } from '@react-navigation/native';
 import { AddHabitStackParamList, HabitData } from './AddHabitScreen';
 import { HabitProps } from '../../backend/props/HabitProps';
 import TimeInput from '../components/TimeInput';
-import DateTimePicker from '@react-native-community/datetimepicker';
 import Icon from 'react-native-vector-icons/MaterialCommunityIcons';
 import { colors, spacing, shadows, borderRadius, typography } from '../theme/theme';
 
@@ -29,33 +27,14 @@ type AddHabitPage3Props = {
 const AddHabitPage3 = ({ route, navigation, updateHabitData }: AddHabitPage3Props) => {
     const { evaluationType, habitName } = route.params;
     const [target, setTarget] = useState('1');
-    const [goal, setGoal] = useState('');
     const [targetError, setTargetError] = useState('');
-    const [goalError, setGoalError] = useState('');
-    const [reminderEnabled, setReminderEnabled] = useState(false);
     const [timeInSeconds, setTimeInSeconds] = useState(0);
     const [timeError, setTimeError] = useState('');
-    const [showReminderPicker, setShowReminderPicker] = useState(false);
-    const [reminderTime, setReminderTime] = useState(new Date());
-    const [reminderTimeDisplay, setReminderTimeDisplay] = useState('9:00 AM');
 
     const handleTimeChange = (seconds: number) => {
         setTimeInSeconds(seconds);
         if (seconds > 0) {
             setTimeError('');
-        }
-    };
-
-    const handleReminderTimeChange = (event: any, selectedDate?: Date) => {
-        setShowReminderPicker(Platform.OS === 'ios');
-        if (selectedDate) {
-            setReminderTime(selectedDate);
-            const hours = selectedDate.getHours();
-            const minutes = selectedDate.getMinutes();
-            const ampm = hours >= 12 ? 'PM' : 'AM';
-            const formattedHours = hours % 12 || 12;
-            const formattedMinutes = minutes.toString().padStart(2, '0');
-            setReminderTimeDisplay(`${formattedHours}:${formattedMinutes} ${ampm}`);
         }
     };
 
@@ -66,11 +45,6 @@ const AddHabitPage3 = ({ route, navigation, updateHabitData }: AddHabitPage3Prop
         if (evaluationType === HabitProps.with_number) {
             if (!target || parseInt(target, 10) <= 0) {
                 setTargetError('Please enter a valid target number');
-                isValid = false;
-            }
-
-            if (goal && parseInt(goal, 10) <= 0) {
-                setGoalError('Please enter a valid goal number');
                 isValid = false;
             }
         } else if (evaluationType === HabitProps.with_time) {
@@ -95,20 +69,9 @@ const AddHabitPage3 = ({ route, navigation, updateHabitData }: AddHabitPage3Prop
             data.target = 1;
         } else if (evaluationType === HabitProps.with_number) {
             data.target = parseInt(target, 10);
-            if (goal) {
-                data.goal = parseInt(goal, 10);
-            }
         } else if (evaluationType === HabitProps.with_time) {
-            data.target = Math.ceil(timeInSeconds / 60); // Convert to minutes for display
+            data.target = timeInSeconds; // Store time directly in seconds
             data.timeInSeconds = timeInSeconds;
-        }
-
-        // Add reminder settings if enabled
-        if (reminderEnabled) {
-            data.reminderEnabled = true;
-            data.reminderTime = reminderTime.toISOString();
-        } else {
-            data.reminderEnabled = false;
         }
 
         // Update habit data in parent component
@@ -119,8 +82,8 @@ const AddHabitPage3 = ({ route, navigation, updateHabitData }: AddHabitPage3Prop
             evaluationType,
             habitName,
             target: data.target || 0,
-            frequency: [], // This will be filled from the parent state
-            startDate: '', // This will be filled from the parent state
+            frequency: [],
+            startDate: '',
             goal: data.goal,
             timeInSeconds: data.timeInSeconds,
             reminderEnabled: data.reminderEnabled,
@@ -179,34 +142,6 @@ const AddHabitPage3 = ({ route, navigation, updateHabitData }: AddHabitPage3Prop
                             </Text>
                         </View>
 
-                        <View style={styles.divider} />
-
-                        <View style={styles.inputContainer}>
-                            <Text style={styles.inputLabel}>
-                                Goal
-                            </Text>
-                            <TextInput
-                                style={styles.input}
-                                placeholder="Enter goal (e.g. 100)"
-                                placeholderTextColor={colors.textTertiary}
-                                value={goal}
-                                onChangeText={(text) => {
-                                    // Only allow numbers
-                                    if (/^\d*$/.test(text)) {
-                                        setGoal(text);
-                                        if (!text || parseInt(text, 10) > 0) {
-                                            setGoalError('');
-                                        }
-                                    }
-                                }}
-                                keyboardType="numeric"
-                                maxLength={6}
-                            />
-                            {goalError ? <Text style={styles.errorText}>{goalError}</Text> : null}
-                            <Text style={styles.helperText}>
-                                Set a long-term goal to track your progress (optional)
-                            </Text>
-                        </View>
                     </View>
                 );
 
@@ -245,45 +180,6 @@ const AddHabitPage3 = ({ route, navigation, updateHabitData }: AddHabitPage3Prop
                     <View style={styles.content}>
                         {renderTargetInput()}
 
-                        <View style={styles.formSection}>
-                            <View style={styles.sectionHeader}>
-                                <Icon name="bell-outline" size={24} color={colors.primary} style={styles.sectionIcon} />
-                                <Text style={styles.sectionTitle}>Reminder</Text>
-                            </View>
-                            <View style={styles.reminderContainer}>
-                                <Text style={styles.reminderText}>Enable daily reminder</Text>
-                                <Switch
-                                    value={reminderEnabled}
-                                    onValueChange={setReminderEnabled}
-                                    trackColor={{ false: colors.disabled, true: colors.primary }}
-                                    thumbColor={'#FFFFFF'}
-                                    ios_backgroundColor={colors.disabled}
-                                />
-                            </View>
-                            {reminderEnabled && (
-                                <View style={styles.reminderTimeContainer}>
-                                    <Text style={styles.reminderText}>Reminder Time</Text>
-                                    <TouchableOpacity
-                                        style={styles.timeSelector}
-                                        onPress={() => setShowReminderPicker(true)}
-                                    >
-                                        <Text style={styles.timeSelectorText}>{reminderTimeDisplay}</Text>
-                                        <Icon name="clock-outline" size={20} color="#FFFFFF" />
-                                    </TouchableOpacity>
-                                    {showReminderPicker && (
-                                        <DateTimePicker
-                                            testID="dateTimePicker"
-                                            value={reminderTime}
-                                            mode={'time'}
-                                            is24Hour={false}
-                                            display="default"
-                                            onChange={handleReminderTimeChange}
-                                        />
-                                    )}
-                                </View>
-                            )}
-                        </View>
-
                         <TouchableOpacity
                             style={styles.continueButton}
                             onPress={handleContinue}
@@ -302,6 +198,7 @@ const styles = StyleSheet.create({
     container: {
         flex: 1,
         backgroundColor: colors.background,
+        paddingBottom: 60,
     },
     keyboardAvoid: {
         flex: 1,

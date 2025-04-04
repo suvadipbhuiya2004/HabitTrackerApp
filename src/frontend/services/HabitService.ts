@@ -17,7 +17,7 @@ import {
 } from '../../backend/databases/HabitProgressDatabase';
 
 import { HabitProps } from '../../backend/props/HabitProps';
-import { format } from 'date-fns';
+import { format, eachDayOfInterval, startOfDay } from 'date-fns'; // Added eachDayOfInterval, startOfDay
 
 // Habit interface matching the database structure
 export interface Habit {
@@ -58,7 +58,8 @@ export const formatDateForDB = (date: Date): string => {
 
 // Format date to YYYY-MM-DD for HabitDatabase operations
 export const formatDateForHabitDB = (date: Date): string => {
-    return date.toISOString().split('T')[0];
+    // Use date-fns format to respect local timezone
+    return format(date, 'yyyy-MM-dd');
 };
 
 // Convert day names to day flags for database
@@ -281,25 +282,37 @@ export const deleteAllHabitProgress = async (habitId: number): Promise<void> => 
     }
 };
 
-// Calculate the current streak for a habit
+// Helper function to check if a habit is scheduled for a specific date
+const isDayScheduled = (habit: Habit, date: Date): boolean => {
+    const dayOfWeek = date.getDay(); // 0 = Sunday, 1 = Monday, etc.
+    const dayMap = ['sun', 'mon', 'tue', 'wed', 'thu', 'fri', 'sat'];
+    const dayKey = dayMap[dayOfWeek] as keyof Habit;
+    return habit[dayKey] === 1;
+};
+
+// Calculate the current streak for a habit, considering only scheduled days
 export const getHabitStreak = async (habitId: number): Promise<number> => {
     try {
+        const habit = await getHabitTableDataById(habitId);
+        if (!habit) {
+            return 0;
+        }
+
         const today = new Date();
         let streak = 0;
         let currentDate = new Date(today);
+        currentDate.setHours(0, 0, 0, 0);
 
-        // Check up to 100 days back (to avoid infinite loop)
-        for (let i = 0; i < 100; i++) {
-            const formattedDate = formatDateForDB(currentDate);
-            const progressData = await getHabitTrackingTableDataByDate(habitId, formattedDate);
+        for (let i = 0; i < 365; i++) {
+            if (isDayScheduled(habit, currentDate)) {
+                const formattedDate = formatDateForDB(currentDate);
+                const progressData = await getHabitTrackingTableDataByDate(habitId, formattedDate);
 
-            // If no data or not completed, break the streak
-            if (!progressData || progressData.completed === 0) {
-                break;
+                if (!progressData || progressData.completed !== 1) {
+                    break;
+                }
+                streak++;
             }
-
-            streak++;
-            // Move to previous day
             currentDate.setDate(currentDate.getDate() - 1);
         }
 
@@ -310,7 +323,7 @@ export const getHabitStreak = async (habitId: number): Promise<number> => {
     }
 };
 
-// Get the total number of days a habit has been tracked
+// Get the total number of *scheduled* days a habit has been tracked
 export const getTotalDays = async (habitId: number): Promise<number> => {
     try {
         const habit = await getHabitTableDataById(habitId);
@@ -318,21 +331,32 @@ export const getTotalDays = async (habitId: number): Promise<number> => {
             return 0;
         }
 
-        const startDate = new Date(habit.startDate);
-        const today = new Date();
+        const startDate = startOfDay(new Date(habit.startDate));
+        const today = startOfDay(new Date());
+        let totalScheduledDays = 0;
 
-        // Calculate days between start date and today
-        const diffTime = Math.abs(today.getTime() - startDate.getTime());
-        const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24)) + 1; // +1 to include today
+        // Ensure startDate is not in the future
+        if (startDate > today) {
+            return 0;
+        }
 
-        return diffDays;
+        const interval = { start: startDate, end: today };
+        const allDays = eachDayOfInterval(interval);
+
+        allDays.forEach(day => {
+            if (isDayScheduled(habit, day)) {
+                totalScheduledDays++;
+            }
+        });
+
+        return totalScheduledDays;
     } catch (error) {
         console.error(`Error calculating total days for habit ${habitId}:`, error);
         return 0;
     }
 };
 
-// Get the number of days a habit was completed
+// Get the number of *scheduled* days a habit was completed
 export const getCompletedDays = async (habitId: number): Promise<number> => {
     try {
         const habit = await getHabitTableDataById(habitId);
@@ -340,23 +364,33 @@ export const getCompletedDays = async (habitId: number): Promise<number> => {
             return 0;
         }
 
-        const startDate = new Date(habit.startDate);
-        const today = new Date();
+        const startDate = startOfDay(new Date(habit.startDate));
+        const today = startOfDay(new Date());
         let completedCount = 0;
-        let currentDate = new Date(startDate);
 
-        // Check each day from start date to today
-        while (currentDate <= today) {
-            const formattedDate = formatDateForDB(currentDate);
-            const progressData = await getHabitTrackingTableDataByDate(habitId, formattedDate);
-
-            if (progressData && progressData.completed === 1) {
-                completedCount++;
-            }
-
-            // Move to next day
-            currentDate.setDate(currentDate.getDate() + 1);
+        // Ensure startDate is not in the future
+        if (startDate > today) {
+            return 0;
         }
+
+        const interval = { start: startDate, end: today };
+        const allDays = eachDayOfInterval(interval);
+
+        // Use Promise.all for potentially faster async checks
+        await Promise.all(allDays.map(async (day) => {
+            if (isDayScheduled(habit, day)) {
+                const formattedDate = formatDateForDB(day); // Uses DD-MM-YYYY
+                try {
+                    const progressData = await getHabitTrackingTableDataByDate(habitId, formattedDate);
+                    if (progressData && progressData.completed === 1) {
+                        completedCount++;
+                    }
+                } catch (err) {
+                    // Handle or log error if needed, but don't stop the whole process
+                    console.error(`Error fetching progress for ${formattedDate}:`, err);
+                }
+            }
+        }));
 
         return completedCount;
     } catch (error) {

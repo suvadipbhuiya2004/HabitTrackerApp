@@ -177,6 +177,7 @@ const styles = StyleSheet.create({
     container: {
         flex: 1,
         backgroundColor: colors.background,
+        paddingBottom: 60,
     },
     keyboardAvoid: {
         flex: 1,

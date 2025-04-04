@@ -1,4 +1,5 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useCallback } from 'react';
+import { useFocusEffect } from '@react-navigation/native';
 import {
     View,
     Text,
@@ -63,9 +64,12 @@ const WeekView = () => {
         }
     }, []);
 
-    useEffect(() => {
-        fetchHabitsForDate(selectedDate);
-    }, [selectedDate, fetchHabitsForDate]);
+    // Use useFocusEffect to fetch data when the screen comes into focus
+    useFocusEffect(
+        useCallback(() => {
+            fetchHabitsForDate(selectedDate);
+        }, [selectedDate, fetchHabitsForDate])
+    );
 
     const handleDateSelect = (date: Date) => {
         setSelectedDate(date);
@@ -104,7 +108,7 @@ const WeekView = () => {
     };
 
     const handleProgressSubmit = () => {
-        if (!selectedHabit) {return;}
+        if (!selectedHabit) { return; }
 
         let progress = 0;
 
@@ -158,9 +162,23 @@ const WeekView = () => {
                 progressDisplay = `${item.progress || 0}/${item.target}`;
                 progressIcon = percentage >= 100 ? 'check-circle' : 'numeric';
             } else {
-                const hours = Math.floor((item.progress || 0) / 3600);
-                const minutes = Math.floor(((item.progress || 0) % 3600) / 60);
-                progressDisplay = `${hours}h ${minutes}m / ${Math.floor(item.target / 3600)}h ${Math.floor((item.target % 3600) / 60)}m`;
+                // For time-based habits, convert seconds to hours and minutes for display
+                const progressHours = Math.floor((item.progress || 0) / 3600);
+                const progressMinutes = Math.floor(((item.progress || 0) % 3600) / 60);
+
+                const targetHours = Math.floor(item.target / 3600);
+                const targetMinutes = Math.floor((item.target % 3600) / 60);
+
+                // Format the display string based on the values
+                let progressPart = '';
+                if (progressHours > 0) { progressPart += `${progressHours}h `; }
+                progressPart += `${progressMinutes}m`;
+
+                let targetPart = '';
+                if (targetHours > 0) { targetPart += `${targetHours}h `; }
+                targetPart += `${targetMinutes}m`;
+
+                progressDisplay = `${progressPart} / ${targetPart}`;
                 progressIcon = percentage >= 100 ? 'check-circle' : 'clock-outline';
             }
         }
@@ -321,6 +339,7 @@ const styles = StyleSheet.create({
     container: {
         flex: 1,
         backgroundColor: colors.background,
+        paddingBottom: 60,
     },
     weekContainer: {
         backgroundColor: colors.card,

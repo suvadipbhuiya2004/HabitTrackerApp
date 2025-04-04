@@ -138,6 +138,18 @@ const HabitScreen = () => {
         return days.join(', ');
     };
 
+    // Format time in seconds to hours and minutes
+    const formatTimeDisplay = (seconds: number): string => {
+        const hours = Math.floor(seconds / 3600);
+        const minutes = Math.floor((seconds % 3600) / 60);
+
+        if (hours > 0) {
+            return `${hours}h ${minutes}m`;
+        } else {
+            return `${minutes}m`;
+        }
+    };
+
     // Load habit statistics when a habit is selected
     useEffect(() => {
         const loadHabitStats = async () => {
@@ -192,7 +204,9 @@ const HabitScreen = () => {
                     </View>
                     <View style={styles.detailRow}>
                         <Text style={styles.detailLabel}>Target:</Text>
-                        <Text style={styles.detailValue}>{item.target}</Text>
+                        <Text style={styles.detailValue}>
+                            {item.mode === 3 ? formatTimeDisplay(item.target) : item.target}
+                        </Text>
                     </View>
                     <View style={styles.detailRow}>
                         <Text style={styles.detailLabel}>Frequency:</Text>
@@ -251,8 +265,10 @@ const HabitScreen = () => {
                             <Text style={styles.chartTitle}>Weekly Performance</Text>
                             <View style={styles.weeklyStats}>
                                 {habitStats.weeklyProgress.map((dayData) => {
-                                    // Normalize progress to percentage (0-100)
-                                    const dayProgress = Math.min(100, Math.max(0, dayData.progress * 100));
+                                    // Calculate progress percentage based on habit target
+                                    const dayProgress = item.target > 0
+                                        ? Math.min(100, Math.max(0, Math.round((dayData.progress / item.target) * 100)))
+                                        : (dayData.progress > 0 ? 100 : 0); // Handle target 0 or yes/no case (target=1)
                                     return (
                                         <View key={dayData.day} style={styles.dayStats}>
                                             <View style={styles.dayBarContainer}>
@@ -318,7 +334,7 @@ const styles = StyleSheet.create({
     container: {
         flex: 1,
         backgroundColor: '#F5F5F7',
-        paddingBottom: 80, // Add bottom padding to prevent content from being hidden under the navigation bar
+        paddingBottom: 80,
     },
     header: {
         flexDirection: 'row',

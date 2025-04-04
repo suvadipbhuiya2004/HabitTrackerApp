@@ -21,12 +21,8 @@ type RootStackParamList = {
     Settings: undefined;
 };
 
-const Tab = createBottomTabNavigator();
-const Stack = createStackNavigator<RootStackParamList>();
-
 const BLUE_COLOR = '#4A6FFF';
 
-// Define styles first so they can be used in components
 const styles = StyleSheet.create({
     container: {
         flex: 1,
@@ -90,7 +86,6 @@ const styles = StyleSheet.create({
     },
 });
 
-
 // Settings button component to avoid creating during render
 const SettingsButton: React.FC = () => {
     const navigation = useNavigation();
@@ -142,6 +137,7 @@ const commonTabScreenOptions = {
 };
 
 // Main tab navigator
+const Tab = createBottomTabNavigator();
 const TabNavigator = () => {
     return (
         <Tab.Navigator
@@ -180,10 +176,12 @@ const TabNavigator = () => {
 };
 
 // Root stack navigator with tabs and settings
-const AppNavigator = () => {
+const Stack = createStackNavigator<RootStackParamList>();
+const AppNavigator: React.FC = () => {
     return (
         <NavigationContainer>
             <Stack.Navigator screenOptions={{ headerShown: false }}>
+                {/* Main app flow */}
                 <Stack.Screen name="TabNavigator" component={TabNavigator} />
                 <Stack.Screen
                     name="Settings"

@@ -3,34 +3,34 @@
 // Color palette
 export const colors = {
     // Primary colors
-    primary: '#4A6FFF',      // Main brand color
-    primaryDark: '#3A5AE0',  // Darker shade for pressed states
-    primaryLight: '#7A95FF', // Lighter shade for backgrounds
+    primary: '#4A6FFF',
+    primaryDark: '#3A5AE0',
+    primaryLight: '#7A95FF',
 
     // Secondary colors
-    secondary: '#FF6B6B',      // Secondary accent color
-    secondaryDark: '#E05555',  // Darker shade for pressed states
-    secondaryLight: '#FF9B9B', // Lighter shade for backgrounds
+    secondary: '#FF6B6B',
+    secondaryDark: '#E05555',
+    secondaryLight: '#FF9B9B',
 
     // Neutral colors
-    background: '#F8F9FC',    // Main background
-    card: '#FFFFFF',          // Card background
-    inputBackground: '#F5F7FC', // Input field background
-    text: '#333333',          // Primary text
-    textSecondary: '#666666', // Secondary text
-    textTertiary: '#999999',  // Tertiary text (hints, placeholders)
+    background: '#F8F9FC',
+    card: '#FFFFFF',
+    inputBackground: '#F5F7FC',
+    text: '#333333',
+    textSecondary: '#666666',
+    textTertiary: '#999999',
 
     // Status colors
-    success: '#4CAF50',       // Success states
-    warning: '#FFC107',       // Warning states
-    error: '#E53935',         // Error states
-    info: '#2196F3',          // Information states
+    success: '#4CAF50',
+    warning: '#FFC107',
+    error: '#E53935',
+    info: '#2196F3',
 
     // UI elements
-    border: '#E0E0E0',        // Borders
-    divider: '#EEEEEE',       // Dividers
-    disabled: '#CCCCCC',      // Disabled elements
-    shadow: 'rgba(0, 0, 0, 0.1)', // Shadows
+    border: '#E0E0E0',
+    divider: '#EEEEEE',
+    disabled: '#CCCCCC',
+    shadow: 'rgba(0, 0, 0, 0.1)',
 };
 
 // Typography

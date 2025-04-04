@@ -1,10 +1,10 @@
 import React, { useState, useEffect } from 'react';
-import { 
-    View, 
-    Text, 
-    StyleSheet, 
+import {
+    View,
+    Text,
+    StyleSheet,
     TextInput,
-    TouchableOpacity
+    TouchableOpacity,
 } from 'react-native';
 
 type TimeInputProps = {
@@ -14,11 +14,11 @@ type TimeInputProps = {
     required?: boolean;
 };
 
-const TimeInput: React.FC<TimeInputProps> = ({ 
-    label, 
-    onTimeChange, 
+const TimeInput: React.FC<TimeInputProps> = ({
+    label,
+    onTimeChange,
     initialSeconds = 0,
-    required = false
+    required = false,
 }) => {
     const [hours, setHours] = useState(Math.floor(initialSeconds / 3600).toString());
     const [minutes, setMinutes] = useState(Math.floor((initialSeconds % 3600) / 60).toString());
@@ -27,12 +27,12 @@ const TimeInput: React.FC<TimeInputProps> = ({
 
     useEffect(() => {
         // Convert to total seconds and notify parent
-        const h = parseInt(hours) || 0;
-        const m = parseInt(minutes) || 0;
-        const s = parseInt(seconds) || 0;
-        
+        const h = parseInt(hours, 10) || 0;
+        const m = parseInt(minutes, 10) || 0;
+        const s = parseInt(seconds, 10) || 0;
+
         const totalSeconds = h * 3600 + m * 60 + s;
-        
+
         if (required && totalSeconds === 0) {
             setError('Time is required');
         } else {
@@ -48,13 +48,13 @@ const TimeInput: React.FC<TimeInputProps> = ({
     };
 
     const validateAndSetMinutes = (text: string) => {
-        if (text === '' || (/^\d+$/.test(text) && parseInt(text) < 60)) {
+        if (text === '' || (/^\d+$/.test(text) && parseInt(text, 10) < 60)) {
             setMinutes(text);
         }
     };
 
     const validateAndSetSeconds = (text: string) => {
-        if (text === '' || (/^\d+$/.test(text) && parseInt(text) < 60)) {
+        if (text === '' || (/^\d+$/.test(text) && parseInt(text, 10) < 60)) {
             setSeconds(text);
         }
     };
@@ -64,7 +64,7 @@ const TimeInput: React.FC<TimeInputProps> = ({
             <Text style={styles.label}>
                 {label} {required && <Text style={styles.required}>*</Text>}
             </Text>
-            
+
             <View style={styles.timeInputContainer}>
                 <View style={styles.timeUnit}>
                     <TextInput
@@ -77,9 +77,9 @@ const TimeInput: React.FC<TimeInputProps> = ({
                     />
                     <Text style={styles.unitLabel}>Hours</Text>
                 </View>
-                
+
                 <Text style={styles.separator}>:</Text>
-                
+
                 <View style={styles.timeUnit}>
                     <TextInput
                         style={styles.input}
@@ -91,9 +91,9 @@ const TimeInput: React.FC<TimeInputProps> = ({
                     />
                     <Text style={styles.unitLabel}>Min</Text>
                 </View>
-                
+
                 <Text style={styles.separator}>:</Text>
-                
+
                 <View style={styles.timeUnit}>
                     <TextInput
                         style={styles.input}
@@ -106,11 +106,11 @@ const TimeInput: React.FC<TimeInputProps> = ({
                     <Text style={styles.unitLabel}>Sec</Text>
                 </View>
             </View>
-            
+
             {error ? <Text style={styles.errorText}>{error}</Text> : null}
-            
+
             <View style={styles.presetContainer}>
-                <TouchableOpacity 
+                <TouchableOpacity
                     style={styles.presetButton}
                     onPress={() => {
                         setHours('0');
@@ -120,8 +120,8 @@ const TimeInput: React.FC<TimeInputProps> = ({
                 >
                     <Text style={styles.presetText}>15 min</Text>
                 </TouchableOpacity>
-                
-                <TouchableOpacity 
+
+                <TouchableOpacity
                     style={styles.presetButton}
                     onPress={() => {
                         setHours('0');
@@ -131,8 +131,8 @@ const TimeInput: React.FC<TimeInputProps> = ({
                 >
                     <Text style={styles.presetText}>30 min</Text>
                 </TouchableOpacity>
-                
-                <TouchableOpacity 
+
+                <TouchableOpacity
                     style={styles.presetButton}
                     onPress={() => {
                         setHours('1');

@@ -81,10 +81,8 @@ export const updateHabitTrackingTable = async (ID: number, date: string, progres
 
         // Calculate completion status
         let completed = 0;
-        if (habitData.target === progress) {
+        if (progress >= habitData.target) {
             completed = 1;
-        } else if (habitData.target > progress) {
-            completed = 0;
         } else if (skip) {
             completed = 2;
         }

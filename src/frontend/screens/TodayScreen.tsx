@@ -1,6 +1,6 @@
 import React from 'react';
 import { StyleSheet, View, Text, SafeAreaView } from 'react-native';
-import { useNotification } from './UseNoti';
+import { useNotification } from '../hooks/useNotification';
 import WeekView from '../components/WeekView';
 import { colors, spacing } from '../theme/theme';
 import Icon from 'react-native-vector-icons/MaterialCommunityIcons';

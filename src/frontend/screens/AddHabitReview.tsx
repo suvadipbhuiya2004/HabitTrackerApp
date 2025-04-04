@@ -33,7 +33,11 @@ const AddHabitReview = ({ route, navigation, habitData }: AddHabitReviewProps) =
             case HabitProps.with_number:
                 return `Number (Target: ${habitData.target})`;
             case HabitProps.with_time:
-                return `Timer (Target: ${habitData.target} minutes)`;
+                // Convert seconds to a readable format
+                const hours = Math.floor(habitData.target / 3600);
+                const minutes = Math.floor((habitData.target % 3600) / 60);
+                const seconds = habitData.target % 60;
+                return `Timer (Target: ${hours > 0 ? `${hours}h ` : ''}${minutes > 0 ? `${minutes}m ` : ''}${seconds > 0 ? `${seconds}s` : ''})`;
             default:
                 return 'Unknown';
         }
@@ -46,10 +50,7 @@ const AddHabitReview = ({ route, navigation, habitData }: AddHabitReviewProps) =
             // Format time for database if it's a timer-based habit
             let timeString = null;
             if (evaluationType === HabitProps.with_time && habitData.timeInSeconds) {
-                const hours = Math.floor(habitData.timeInSeconds / 3600);
-                const minutes = Math.floor((habitData.timeInSeconds % 3600) / 60);
-                const seconds = habitData.timeInSeconds % 60;
-                timeString = `${hours.toString().padStart(2, '0')}:${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}`;
+                timeString = habitData.target.toString();
             }
 
             // Ensure target is a number
@@ -84,7 +85,6 @@ const AddHabitReview = ({ route, navigation, habitData }: AddHabitReviewProps) =
                     {
                         text: 'OK',
                         onPress: () => {
-                            // Navigate back to the main habits screen or wherever appropriate
                             navigation.popToTop();
                         },
                     },
@@ -147,7 +147,9 @@ const AddHabitReview = ({ route, navigation, habitData }: AddHabitReviewProps) =
                         <View style={styles.infoRow}>
                             <Text style={styles.label}>Time:</Text>
                             <Text style={styles.value}>
-                                {Math.floor(habitData.timeInSeconds / 3600)}h {Math.floor((habitData.timeInSeconds % 3600) / 60)}m
+                                {Math.floor(habitData.timeInSeconds / 3600) > 0 ? `${Math.floor(habitData.timeInSeconds / 3600)}h ` : ''}
+                                {Math.floor((habitData.timeInSeconds % 3600) / 60) > 0 ? `${Math.floor((habitData.timeInSeconds % 3600) / 60)}m ` : ''}
+                                {habitData.timeInSeconds % 60 > 0 ? `${habitData.timeInSeconds % 60}s` : ''}
                             </Text>
                         </View>
                     )}

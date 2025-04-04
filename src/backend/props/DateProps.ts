@@ -4,9 +4,9 @@ export const isValidDate = (dateString: string, format: string = 'DD-MM-YYYY'): 
     // Define regex patterns for both formats
     const ddmmyyyyRegex = /^(0[1-9]|[12]\d|3[01])-(0[1-9]|1[0-2])-(\d{4})$/;
     const yyyymmddRegex = /^(\d{4})-(0[1-9]|1[0-2])-(0[1-9]|[12]\d|3[01])$/;
-    
+
     let day: number, month: number, year: number;
-    
+
     if (format === 'DD-MM-YYYY') {
         if (!ddmmyyyyRegex.test(dateString)) {
             return false;
